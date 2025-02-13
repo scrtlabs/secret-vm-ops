@@ -96,6 +96,77 @@ namespace Hex {
 
 }
 
+void SerializeCollateral(std::vector<uint8_t>& ret, const uint8_t* pColl, uint32_t nColl)
+{
+        if (nColl < sizeof(sgx_ql_qve_collateral_t))
+                return;
+
+        const auto* p_ql_col = reinterpret_cast<const sgx_ql_qve_collateral_t*>(pColl);
+        
+        uint32_t size_extra = p_ql_col->pck_crl_issuer_chain_size
+                + p_ql_col->root_ca_crl_size
+                + p_ql_col->pck_crl_size
+                + p_ql_col->tcb_info_issuer_chain_size
+                + p_ql_col->tcb_info_size
+                + p_ql_col->qe_identity_issuer_chain_size
+                + p_ql_col->qe_identity_size;
+
+        if (nColl < sizeof(sgx_ql_qve_collateral_t) + size_extra)
+                return;
+
+#pragma pack (push, 1)
+        struct QlQveCollateral {
+                uint32_t tee_type;
+                uint32_t pck_crl_issuer_chain_size;
+                uint32_t root_ca_crl_size;
+                uint32_t pck_crl_size;
+                uint32_t tcb_info_issuer_chain_size;
+                uint32_t tcb_info_size;
+                uint32_t qe_identity_issuer_chain_size;
+                uint32_t qe_identity_size;
+        };
+#pragma pack (pop)
+                    
+        
+        uint32_t out_size = sizeof(QlQveCollateral) + size_extra;
+
+        ret.resize(out_size);
+        auto& x = *reinterpret_cast<QlQveCollateral*>(&ret.front());
+
+        x.tee_type = p_ql_col->tee_type;
+        x.pck_crl_issuer_chain_size = p_ql_col->pck_crl_issuer_chain_size;
+        x.root_ca_crl_size = p_ql_col->root_ca_crl_size;
+        x.pck_crl_size = p_ql_col->pck_crl_size;
+        x.tcb_info_issuer_chain_size = p_ql_col->tcb_info_issuer_chain_size;
+        x.tcb_info_size = p_ql_col->tcb_info_size;
+        x.qe_identity_issuer_chain_size = p_ql_col->qe_identity_issuer_chain_size;
+        x.qe_identity_size = p_ql_col->qe_identity_size;
+
+        uint32_t offs = sizeof(QlQveCollateral);
+        
+        memcpy(&ret.front() + offs, p_ql_col->pck_crl_issuer_chain, x.pck_crl_issuer_chain_size);
+        offs += x.pck_crl_issuer_chain_size;
+
+        memcpy(&ret.front() + offs, p_ql_col->root_ca_crl, x.root_ca_crl_size);
+        offs += x.root_ca_crl_size;
+        
+        memcpy(&ret.front() + offs, p_ql_col->pck_crl, x.pck_crl_size);
+        offs += x.pck_crl_size;
+        
+        memcpy(&ret.front() + offs, p_ql_col->tcb_info_issuer_chain, x.tcb_info_issuer_chain_size);
+        offs += x.tcb_info_issuer_chain_size;
+        
+        memcpy(&ret.front() + offs, p_ql_col->tcb_info, x.tcb_info_size);
+        offs += x.tcb_info_size;
+
+        memcpy(&ret.front() + offs, p_ql_col->qe_identity_issuer_chain, x.qe_identity_issuer_chain_size);
+        offs += x.qe_identity_issuer_chain_size;
+
+        memcpy(&ret.front() + offs, p_ql_col->qe_identity, x.qe_identity_size);
+        offs += x.qe_identity_issuer_chain_size;
+}
+
+
 int main(int argc, char *argv[])
 {
         if (argc < 2)
@@ -131,9 +202,11 @@ int main(int argc, char *argv[])
         	return 1;
 	}
 
+	SerializeCollateral(vColl, pColl, nColl);
 
 	printf("\nFetched Collateral: \n");
-	Hex::PrintToFile(pColl, nColl, stdout);
+        if (!vColl.empty())
+	        Hex::PrintToFile(&vColl.front(), (uint32_t) vColl.size(), stdout);
 	printf("\n\n");
 
 	uint32_t nExpStatus = 0;
