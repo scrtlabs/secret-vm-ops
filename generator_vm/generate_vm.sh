@@ -24,11 +24,16 @@ find_free_port() {
 SSH_PORT=$(find_free_port)
 
 create_new_img() {
-    NEW_IMAGE=ubuntu-$SSH_PORT.qcow2
+    NEW_IMAGE="ubuntu-$SSH_PORT.qcow2"
+    if [[ $1 == iso=* ]]; then
+        NEW_IMAGE="ubuntu-custom-$SSH_PORT.qcow2"
+    fi
+
     if [ ! -f "/shared/images/$NEW_IMAGE" ]; then
         cp /shared/images/ubuntu-tdx-3.qcow2 /shared/images/$NEW_IMAGE
     fi
-    echo $NEW_IMAGE
+
+    echo "$NEW_IMAGE"
 }
 
 IMG=$(create_new_img)
@@ -65,7 +70,10 @@ G_CID=$(available_guest_cid)
 QUOTE_VSOCK_ARGS="-device vhost-vsock-pci,guest-cid=$G_CID"
 # approach 2 : tdvmcall; see quote-generation-socket in qemu command line
 
-qemu-system-x86_64 -D $LOGFILE \
+if [[ $1 == iso=* ]]; then
+    iso_value="${1#*=}"
+    run_command="Run from ISO $PREFIX/iso/$iso_value"
+    qemu-system-x86_64 -D $LOGFILE \
 		   -accel kvm \
 		   -m 16G -smp 16 \
 		   -name ${PROCESS_NAME},process=${PROCESS_NAME},debug-threads=on \
@@ -81,9 +89,29 @@ qemu-system-x86_64 -D $LOGFILE \
 		   -device virtio-blk-pci,drive=virtio-disk0 \
 		   ${QUOTE_VSOCK_ARGS} \
 		   -pidfile /tmp/${IMG}-pid.pid \
-                   -daemonize \
-#                   -serial stdio 
-#		   -cdrom "${PREFIX}/iso/ubuntu-24.04.1-live-server-amd64.iso"
+           -serial stdio \
+           -cdrom "${PREFIX}/iso/$iso_value" 
+else
+    run_command="qemu-system-x86_64"
+    qemu-system-x86_64 -D $LOGFILE \
+		   -accel kvm \
+		   -m 16G -smp 16 \
+		   -name ${PROCESS_NAME},process=${PROCESS_NAME},debug-threads=on \
+		   -cpu host \
+		   -object '{"qom-type":"tdx-guest","id":"tdx","quote-generation-socket":{"type": "vsock", "cid":"2","port":"4050"}}' \
+		   -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,hpet=off \
+		   -bios ${TDX_FIRMWARE} \
+		   -nographic \
+		   -nodefaults \
+		   -device virtio-net-pci,netdev=nic0_td,mac=${MAC_ADDRESS} \
+		   -netdev user,id=nic0_td,hostfwd=tcp::${SSH_PORT}-:22 \
+		   -drive file=${TDX_IMG},if=none,id=virtio-disk0 \
+		   -device virtio-blk-pci,drive=virtio-disk0 \
+		   ${QUOTE_VSOCK_ARGS} \
+		   -pidfile /tmp/${IMG}-pid.pid \
+           -daemonize 
+
+fi
 
 ret=$?
 if [ $ret -ne 0 ]; then
