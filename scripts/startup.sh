@@ -35,13 +35,16 @@ get_master_secret()
     test_valid_hex_data "collateral"
 
     # Query kms contract
-    local kms_res=$(python3 kms_query.py 1 $quote $collateral)
-    local encrypted_secret=$(echo $kms_res  |sed -n '1p')
-    test_valid_hex_data "encrypted_secret"
+    local kms_res=$(python3 kms_query.py 0 $quote $collateral)
 
-    local export_pubkey=$(echo $kms_res  |sed -n '2p')
+    # the result must consist of 2 lines, which are encrypted master secret and the export pubkey respectively. Parse it.
+    kms_res=$(echo "$kms_res" | xargs) # strip possible leading and trailing spaces
+
+    read encrypted_secret export_pubkey <<< "$kms_res"
+    test_valid_hex_data "encrypted_secret"
     test_valid_hex_data "export_pubkey"
 
+    # finally decrypt the result
     local master_secret=$(./crypt_tool decrypt -s $seed -d $encrypted_secret -p $export_pubkey)
     test_valid_hex_data "master_secret"
 

@@ -24,10 +24,11 @@ if len(sys.argv) > 3:
     # The response should look like this:
     # {
     #   "encrypted_secret_key": "xxxxx",
-    #   "export_key": "yyyyy"
+    #   "encryption_pub_key": "yyyyy"
     # }
 
     print(result.get('encrypted_secret_key'))
+    print(result.get('encryption_pub_key'))
 
 else:
     print(f"Usage: service_id hex_encoded(quote) hex_encoded(collateral)")
