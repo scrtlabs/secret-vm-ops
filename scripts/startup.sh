@@ -10,8 +10,9 @@ test_valid_hex_data()
         return 0
         # Valid hex
     else
-        echo "invalid value for " $var_name ": " $var_value
-        exit 1
+        # echo "invalid value for " $var_name ": " $var_value
+        g_Error=$(echo "invalid value for " $var_name ": " $var_value)
+        return 1
     fi
 }
 
@@ -21,18 +22,26 @@ get_master_secret()
     # get random 32 bytes
     #local seed=$(head -c 32 /dev/random | xxd -p -c 32)
     local seed=$(./crypt_tool rand)
-    test_valid_hex_data "seed"
+    if ! test_valid_hex_data "seed"; then
+        return 1
+    fi
 
     # use it to derive initial pubkey
     local pubkey=$(./crypt_tool generate-key -s $seed)
-    test_valid_hex_data "pubkey"
+    if ! test_valid_hex_data "pubkey"; then
+        return 1
+    fi
 
     # get attestation with this pubkey as report data
     local quote=$(./attest_tool attest $pubkey)
-    test_valid_hex_data "quote"
+    if ! test_valid_hex_data "quote"; then
+        return 1
+    fi
 
     local collateral=$(./dcap_collateral_tool $quote |sed -n '3p')
-    test_valid_hex_data "collateral"
+    if ! test_valid_hex_data "collateral"; then
+        return 1
+    fi
 
     # Query kms contract
     local kms_res=$(python3 kms_query.py 0 $quote $collateral)
@@ -41,27 +50,34 @@ get_master_secret()
     kms_res=$(echo "$kms_res" | xargs) # strip possible leading and trailing spaces
 
     read encrypted_secret export_pubkey <<< "$kms_res"
-    test_valid_hex_data "encrypted_secret"
-    test_valid_hex_data "export_pubkey"
+    if ! test_valid_hex_data "encrypted_secret"; then
+        return 1
+    fi
+
+    if ! test_valid_hex_data "export_pubkey"; then
+        return 1
+    fi
 
     # finally decrypt the result
-    local master_secret=$(./crypt_tool decrypt -s $seed -d $encrypted_secret -p $export_pubkey)
-    test_valid_hex_data "master_secret"
+    master_secret=$(./crypt_tool decrypt -s $seed -d $encrypted_secret -p $export_pubkey)
+    if ! test_valid_hex_data "master_secret"; then
+        return 1
+    fi
 
-    echo $master_secret
+    return 0
 }
 
-mount_secret_fs()
+mount_secret_fs_internal()
 {
     local fs_passwd="$1"
-    local fs_container_path="./encrypted_fs.img"
+    local fs_container_path="$2"
 
     if [ -f $fs_container_path ]; then
         echo "Encrypted file system already exists"
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
     else
         echo "Creating encrypted file system"
-        dd if=/dev/zero of=$fs_container_path bs=1M count=500
+        dd if=/dev/zero of=$fs_container_path bs=1M count=50
         echo -n $fs_passwd | cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
         sudo mkfs.ext4 /dev/mapper/encrypted_volume
@@ -77,7 +93,15 @@ mount_secret_fs()
     #   sudo cryptsetup luksClose encrypted_volume
 }
 
-#master_secret=$(get_master_secret)
-#echo $master_secret
+g_Error=""
 
-#mount_secret_fs "abracadabra"
+if get_master_secret; then
+
+    mount_secret_fs_internal $master_secret "./encrypted_fs.img"
+    echo "$master_secret" | sudo tee /mnt/secure/master_secret.txt > /dev/null
+else
+    echo "Couldn't get master secret: $g_Error"
+    mount_secret_fs_internal "12345" "./encrypted_dummy.img"
+fi
+
+sudo ./attest_tool report | sudo tee /mnt/secure/self_report.txt > /dev/null
