@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Startup script
 
 # helper function, tests if a variable is a valid hex-encoded data
@@ -33,7 +35,7 @@ get_master_secret()
     fi
 
     # get attestation with this pubkey as report data
-    local quote=$(./attest_tool attest $pubkey)
+    local quote=$(sudo ./attest_tool attest $pubkey)
     if ! test_valid_hex_data "quote"; then
         return 1
     fi
