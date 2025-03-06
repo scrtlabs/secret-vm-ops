@@ -4,11 +4,14 @@
 ATTEST_TOOL=./attest_tool
 COLLATERAL_TOOL=./dcap_collateral_tool
 CRYPT_TOOL=./crypt_tool
+
 KMS_SERVICE_ID=0
 SECURE_MNT=/mnt/secure
+SECURE_FS_SIZE_MB=20480
 
 PATH_ATTESTATION_TDX=$SECURE_MNT/tdx_attestation.txt
-PATH_ATTESTATION_GPU=$SECURE_MNT/gpu_attestation.txt
+PATH_ATTESTATION_GPU_1=$SECURE_MNT/gpu_attestation.txt
+PATH_ATTESTATION_GPU_2=$SECURE_MNT/gpu_attestation_token.txt
 PATH_SSL_CERTIFICATE=$SECURE_MNT/certificate.pem
 
 # helper function, tests if a variable is a valid hex-encoded data
@@ -88,13 +91,14 @@ mount_secret_fs()
 {
     local fs_passwd="$1"
     local fs_container_path="$2"
+    local size_mbs="$3"
 
     if [ -f $fs_container_path ]; then
         echo "Opening existing encrypted file system..."
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
     else
         echo "Creating encrypted file system..."
-        dd if=/dev/zero of=$fs_container_path bs=1M count=50
+        dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
         echo -n $fs_passwd | cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
         sudo mkfs.ext4 /dev/mapper/encrypted_volume
@@ -104,16 +108,14 @@ mount_secret_fs()
     sudo mkdir $SECURE_MNT
     sudo mount /dev/mapper/encrypted_volume $SECURE_MNT
 
-    # to unmount:
-    #   sudo umount /mnt/secure
-    #   sudo rmdir /mnt/secure
-    #   sudo cryptsetup luksClose encrypted_volume
+    sudo chown $USER $SECURE_MNT
 }
 
-get_gpu_attestation()
+safe_remove_outdated()
 {
-    echo "Getting GPU attestation..."
-    local gpu_res=$(python3 kms_query.py $KMS_SERVICE_ID $quote $collateral)
+    rm -f $PATH_ATTESTATION_GPU_1
+    rm -f $PATH_ATTESTATION_GPU_2
+    rm -f $PATH_ATTESTATION_TDX
 }
 
 finalize()
@@ -131,8 +133,13 @@ finalize()
         return 1
     fi
 
-    if ! get_gpu_attestation $gpu_nonce; then
-        return 1
+    safe_remove_outdated
+
+    python3 gpu_attest.py secret_tee $gpu_nonce $PATH_ATTESTATION_GPU_1 $PATH_ATTESTATION_GPU_2
+
+    if [ ! -e $PATH_ATTESTATION_GPU_1 ] || [ ! -e $PATH_ATTESTATION_GPU_2 ]; then
+        echo "GPU attestation not created"
+	return 1
     fi
 
     echo "SSL certificate fingerprint: $ssl_fingerprint"
@@ -150,14 +157,17 @@ finalize()
         return 1
     fi
 
-    echo $quote | sudo tee $PATH_ATTESTATION_TDX > /dev/null
+    echo $quote > $PATH_ATTESTATION_TDX
+    echo "TDX attestation done"
+
+    return 0
 }
 
 g_Error=""
 
 if [ -n "$1" ]; then
     
-    if [ $1 = "fin" ]; then
+    if [ $1 = "finalize" ]; then
 
         if finalize; then
             echo "All done"
@@ -183,15 +193,15 @@ else
 
     if get_master_secret; then
 
-        mount_secret_fs $master_secret "./encrypted_fs.img"
-        echo "$master_secret" | sudo tee $SECURE_MNT/master_secret.txt > /dev/null
+	mount_secret_fs $master_secret "./encrypted_fs.img" $SECURE_FS_SIZE_MB
+	echo "$master_secret" > $SECURE_MNT/master_secret.txt
     else
         echo "Couldn't get master secret: $g_Error"
-        mount_secret_fs "12345" "./encrypted_dummy.img"
+        mount_secret_fs "12345" "./encrypted_dummy.img" 2
     fi
 
-    sudo $ATTEST_TOOL report | sudo tee $SECURE_MNT/self_report.txt > /dev/null
-    sudo rm $PATH_ATTESTATION_TDX
-    sudo rm $PATH_ATTESTATION_GPU
+    safe_remove_outdated
+
+    sudo $ATTEST_TOOL report > $SECURE_MNT/self_report.txt
 fi
 
