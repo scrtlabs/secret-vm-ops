@@ -1,6 +1,15 @@
 #!/bin/bash
 
 # Startup script
+ATTEST_TOOL=./attest_tool
+COLLATERAL_TOOL=./dcap_collateral_tool
+CRYPT_TOOL=./crypt_tool
+KMS_SERVICE_ID=0
+SECURE_MNT=/mnt/secure
+
+PATH_ATTESTATION_TDX=$SECURE_MNT/tdx_attestation.txt
+PATH_ATTESTATION_GPU=$SECURE_MNT/gpu_attestation.txt
+PATH_SSL_CERTIFICATE=$SECURE_MNT/certificate.pem
 
 # helper function, tests if a variable is a valid hex-encoded data
 test_valid_hex_data()
@@ -21,32 +30,38 @@ test_valid_hex_data()
 # Get the master secret from kms contract, based on our attestation
 get_master_secret()
 {
+    echo "----- Getting master secret -----"
+
     # get random 32 bytes
     #local seed=$(head -c 32 /dev/random | xxd -p -c 32)
-    local seed=$(./crypt_tool rand)
+    local seed=$($CRYPT_TOOL rand)
     if ! test_valid_hex_data "seed"; then
         return 1
     fi
 
     # use it to derive initial pubkey
-    local pubkey=$(./crypt_tool generate-key -s $seed)
+    local pubkey=$($CRYPT_TOOL generate-key -s $seed)
     if ! test_valid_hex_data "pubkey"; then
         return 1
     fi
 
     # get attestation with this pubkey as report data
-    local quote=$(sudo ./attest_tool attest $pubkey)
+    echo "Getting initial attestation..."
+
+    local quote=$(sudo $ATTEST_TOOL attest $pubkey)
     if ! test_valid_hex_data "quote"; then
         return 1
     fi
 
-    local collateral=$(./dcap_collateral_tool $quote |sed -n '3p')
+    local collateral=$($COLLATERAL_TOOL $quote |sed -n '3p')
     if ! test_valid_hex_data "collateral"; then
         return 1
     fi
 
     # Query kms contract
-    local kms_res=$(python3 kms_query.py 0 $quote $collateral)
+    echo "Querying KMS..."
+
+    local kms_res=$(python3 kms_query.py $KMS_SERVICE_ID $quote $collateral)
 
     # the result must consist of 2 lines, which are encrypted master secret and the export pubkey respectively. Parse it.
     kms_res=$(echo "$kms_res" | xargs) # strip possible leading and trailing spaces
@@ -61,7 +76,7 @@ get_master_secret()
     fi
 
     # finally decrypt the result
-    master_secret=$(./crypt_tool decrypt -s $seed -d $encrypted_secret -p $export_pubkey)
+    master_secret=$($CRYPT_TOOL decrypt -s $seed -d $encrypted_secret -p $export_pubkey)
     if ! test_valid_hex_data "master_secret"; then
         return 1
     fi
@@ -69,25 +84,25 @@ get_master_secret()
     return 0
 }
 
-mount_secret_fs_internal()
+mount_secret_fs()
 {
     local fs_passwd="$1"
     local fs_container_path="$2"
 
     if [ -f $fs_container_path ]; then
-        echo "Encrypted file system already exists"
+        echo "Opening existing encrypted file system..."
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
     else
-        echo "Creating encrypted file system"
+        echo "Creating encrypted file system..."
         dd if=/dev/zero of=$fs_container_path bs=1M count=50
         echo -n $fs_passwd | cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
         sudo mkfs.ext4 /dev/mapper/encrypted_volume
     fi
 
-    echo "Mounting encrypted file system"
-    sudo mkdir /mnt/secure
-    sudo mount /dev/mapper/encrypted_volume /mnt/secure
+    echo "Mounting encrypted file system..."
+    sudo mkdir $SECURE_MNT
+    sudo mount /dev/mapper/encrypted_volume $SECURE_MNT
 
     # to unmount:
     #   sudo umount /mnt/secure
@@ -95,15 +110,88 @@ mount_secret_fs_internal()
     #   sudo cryptsetup luksClose encrypted_volume
 }
 
+get_gpu_attestation()
+{
+    echo "Getting GPU attestation..."
+    local gpu_res=$(python3 kms_query.py $KMS_SERVICE_ID $quote $collateral)
+}
+
+finalize()
+{
+    echo "Fetching fingerptint from SSL certificate..."
+    local ssl_fingerprint=$(openssl x509 -in $PATH_SSL_CERTIFICATE -noout -fingerprint -sha256 | awk -F= '{gsub(":", "", $2); print $2}')
+
+    if ! test_valid_hex_data "ssl_fingerprint"; then
+        return 1
+    fi
+
+    # get random 32 bytes
+    local gpu_nonce=$($CRYPT_TOOL rand)
+    if ! test_valid_hex_data "gpu_nonce"; then
+        return 1
+    fi
+
+    if ! get_gpu_attestation $gpu_nonce; then
+        return 1
+    fi
+
+    echo "SSL certificate fingerprint: $ssl_fingerprint"
+    echo "GPU attestation nonce: $gpu_nonce"
+
+    local report_data="${ssl_fingerprint}${gpu_nonce}"
+
+    if [ ${#report_data} -gt 128 ]; then
+        g_Error=$(echo "reportdata length: ${#report_data}")
+        return 1
+    fi
+
+    local quote=$(sudo $ATTEST_TOOL attest $report_data)
+    if ! test_valid_hex_data "quote"; then
+        return 1
+    fi
+
+    echo $quote | sudo tee $PATH_ATTESTATION_TDX > /dev/null
+}
+
 g_Error=""
 
-if get_master_secret; then
+if [ -n "$1" ]; then
+    
+    if [ $1 = "fin" ]; then
 
-    mount_secret_fs_internal $master_secret "./encrypted_fs.img"
-    echo "$master_secret" | sudo tee /mnt/secure/master_secret.txt > /dev/null
+        if finalize; then
+            echo "All done"
+        else
+            echo "Couldn't finalize startup: $g_Error"
+        fi
+
+    else
+
+        if [ $1 = "clear" ]; then
+            sudo umount $SECURE_MNT
+            sudo rmdir $SECURE_MNT
+            sudo cryptsetup luksClose encrypted_volume
+
+        else
+            echo "Invalid argument"
+        fi
+    fi
+
 else
-    echo "Couldn't get master secret: $g_Error"
-    mount_secret_fs_internal "12345" "./encrypted_dummy.img"
+
+    echo "Performing startup sequence..."
+
+    if get_master_secret; then
+
+        mount_secret_fs $master_secret "./encrypted_fs.img"
+        echo "$master_secret" | sudo tee $SECURE_MNT/master_secret.txt > /dev/null
+    else
+        echo "Couldn't get master secret: $g_Error"
+        mount_secret_fs "12345" "./encrypted_dummy.img"
+    fi
+
+    sudo $ATTEST_TOOL report | sudo tee $SECURE_MNT/self_report.txt > /dev/null
+    sudo rm $PATH_ATTESTATION_TDX
+    sudo rm $PATH_ATTESTATION_GPU
 fi
 
-sudo ./attest_tool report | sudo tee /mnt/secure/self_report.txt > /dev/null
