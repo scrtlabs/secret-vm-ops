@@ -7,12 +7,11 @@ CRYPT_TOOL=./crypt_tool
 
 KMS_SERVICE_ID=0
 SECURE_MNT=/mnt/secure
-SECURE_FS_SIZE_MB=20480
+SECURE_FS_SIZE_MB=200480 # 200 GB
 
 PATH_ATTESTATION_TDX=$SECURE_MNT/tdx_attestation.txt
 PATH_ATTESTATION_GPU_1=$SECURE_MNT/gpu_attestation.txt
 PATH_ATTESTATION_GPU_2=$SECURE_MNT/gpu_attestation_token.txt
-PATH_SSL_CERTIFICATE=$SECURE_MNT/certificate.pem
 
 # helper function, tests if a variable is a valid hex-encoded data
 test_valid_hex_data()
@@ -95,18 +94,18 @@ mount_secret_fs()
 
     if [ -f $fs_container_path ]; then
         echo "Opening existing encrypted file system..."
-        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
+        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
     else
         echo "Creating encrypted file system..."
         dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
         echo -n $fs_passwd | cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
-        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume
-        sudo mkfs.ext4 /dev/mapper/encrypted_volume
+        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
+        sudo mkfs.ext4 /dev/mapper/encrypted_volume2
     fi
 
     echo "Mounting encrypted file system..."
     sudo mkdir $SECURE_MNT
-    sudo mount /dev/mapper/encrypted_volume $SECURE_MNT
+    sudo mount /dev/mapper/encrypted_volume2 $SECURE_MNT
 
     sudo chown $USER $SECURE_MNT
 }
@@ -120,8 +119,10 @@ safe_remove_outdated()
 
 finalize()
 {
+    local ssl_cert_path="$1"
+
     echo "Fetching fingerptint from SSL certificate..."
-    local ssl_fingerprint=$(openssl x509 -in $PATH_SSL_CERTIFICATE -noout -fingerprint -sha256 | awk -F= '{gsub(":", "", $2); print $2}')
+    local ssl_fingerprint=$(openssl x509 -in $ssl_cert_path -noout -fingerprint -sha256 | awk -F= '{gsub(":", "", $2); print $2}')
 
     if ! test_valid_hex_data "ssl_fingerprint"; then
         return 1
@@ -139,7 +140,7 @@ finalize()
 
     if [ ! -e $PATH_ATTESTATION_GPU_1 ] || [ ! -e $PATH_ATTESTATION_GPU_2 ]; then
         echo "GPU attestation not created"
-	return 1
+        return 1
     fi
 
     echo "SSL certificate fingerprint: $ssl_fingerprint"
@@ -169,7 +170,7 @@ if [ -n "$1" ]; then
     
     if [ $1 = "finalize" ]; then
 
-        if finalize; then
+        if finalize $2; then
             echo "All done"
         else
             echo "Couldn't finalize startup: $g_Error"
@@ -180,7 +181,7 @@ if [ -n "$1" ]; then
         if [ $1 = "clear" ]; then
             sudo umount $SECURE_MNT
             sudo rmdir $SECURE_MNT
-            sudo cryptsetup luksClose encrypted_volume
+            sudo cryptsetup luksClose encrypted_volume2
 
         else
             echo "Invalid argument"

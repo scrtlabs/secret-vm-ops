@@ -1,0 +1,14 @@
+[Unit]
+Description=Secret TEE startup script
+After=network.target nss-user-lookup.target
+
+[Service]
+ExecStart=/etc/claive/claive_start.sh
+WorkingDirectory=/etc/claive
+User=claive
+Group=claive
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+
