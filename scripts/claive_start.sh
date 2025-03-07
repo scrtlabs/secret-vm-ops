@@ -11,8 +11,8 @@ sudo nvidia-smi conf-compute -srs 1
 
 CERT_DIR=/mnt/secure/cert
 CERT_NAME=secretai2
-CERT_PATH=$CERT_DIR/"$CERT_NAME"_cert.crt
-DOMAIN_NAME=tee-demo1.scrtlabs.com
+CERT_PATH=$CERT_DIR/"$CERT_NAME"_cert.pem
+DOMAIN_NAME=tee-demo.scrtlabs.com
 DOMAIN_EMAIL=info@scrtlabs.com
 
 ./startup.sh
@@ -24,6 +24,3 @@ fi
 
 ./startup.sh finalize $CERT_PATH
 
-cd /home/claive/claive_attest_rest
-
-nohup python server.py &> server.log 
