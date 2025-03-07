@@ -24,6 +24,8 @@
 # Returns:
 #   SHA-256 hash of the system UUID as a hex string
 #
+set -ex
+
 get_master_secret() {
     local secret_file="/mnt/secure/master_secret.txt"
     
@@ -52,7 +54,7 @@ get_master_secret() {
 #
 # Outputs:
 #   - {dest_dir}/{prefix}_private.pem: Private key file in PEM format
-#   - {dest_dir}/{prefix}_cert.pem: Let's Encrypt signed X.509 certificate in PEM format
+#p   - {dest_dir}/{prefix}_cert.pem: Let's Encrypt signed X.509 certificate in PEM format
 #   - {dest_dir}/{prefix}_public.pem: Public key extracted from the certificate in PEM format
 #   - {dest_dir}/{prefix}_chain.pem: Certificate chain in PEM format
 #
@@ -94,7 +96,7 @@ generate_cert() {
     echo "Requesting Let's Encrypt certificate for domain: ${domain}"
 
     # Request certificate using certbot in standalone mode
-    if ! certbot certonly --standalone \
+    if ! sudo certbot certonly --standalone \
         --non-interactive \
         --agree-tos \
         --email "${email}" \
@@ -106,48 +108,51 @@ generate_cert() {
         exit 1
     fi
 
+    sudo chmod -R a+wr "etc/letsencrypt"
     # Certbot directory where certificates are stored
-    local certbot_dir="/etc/letsencrypt/live/${prefix}"
-
+    local latest_dir=$(sudo find /etc/letsencrypt/live/ -type d -name "${prefix}*" | sort -V | tail -1)
+    local certbot_dir="${latest_dir}"
+    sudo chmod -R a+r ${latest_dir}
     # Copy and rename all files to the PEM format with correct naming
-    cp "${certbot_dir}/privkey.pem" "${dest_dir}/${prefix}_private.pem" || {
+    sudo cp "${certbot_dir}/privkey.pem" "${dest_dir}/${prefix}_private.pem" || {
         echo "ERROR: Failed to copy private key file";
         rm -rf "$TEMP_DIR"
         exit 1;
     }
 
-    cp "${certbot_dir}/cert.pem" "${dest_dir}/${prefix}_cert.pem" || {
+    sudo cp "${certbot_dir}/cert.pem" "${dest_dir}/${prefix}_cert.pem" || {
         echo "ERROR: Failed to copy certificate file";
         rm -rf "$TEMP_DIR"
         exit 1;
     }
 
-    cp "${certbot_dir}/chain.pem" "${dest_dir}/${prefix}_chain.pem" || {
+    sudo cp "${certbot_dir}/chain.pem" "${dest_dir}/${prefix}_chain.pem" || {
         echo "ERROR: Failed to copy chain file";
         rm -rf "$TEMP_DIR"
         exit 1;
     }
 
-    cp "${certbot_dir}/fullchain.pem" "${dest_dir}/${prefix}_fullchain.pem" || {
+    sudo cp "${certbot_dir}/fullchain.pem" "${dest_dir}/${prefix}_fullchain.pem" || {
         echo "ERROR: Failed to copy fullchain file";
         rm -rf "$TEMP_DIR"
         exit 1;
     }
 
     # Extract public key from the certificate
-    if ! openssl x509 -pubkey -noout -in "${certbot_dir}/cert.pem" > "${dest_dir}/${prefix}_public.pem"; then
+    if ! sudo openssl x509 -pubkey -noout -in "${certbot_dir}/cert.pem" > "${dest_dir}/${prefix}_public.pem"; then
         echo "ERROR: Failed to extract public key";
         rm -rf "$TEMP_DIR"
         exit 1;
     fi
 
     # Set appropriate permissions
-    chmod 644 "${dest_dir}/${prefix}_private.pem" || {
+    sudo chmod 644 "${dest_dir}/${prefix}_private.pem" || {
         echo "WARNING: Failed to set permissions on private key file";
     }
 
-    chmod 644 "${dest_dir}/${prefix}_cert.pem" "${dest_dir}/${prefix}_public.pem" \
-             "${dest_dir}/${prefix}_chain.pem" "${dest_dir}/${prefix}_fullchain.pem" || {
+    sudo chmod 644 "${dest_dir}/${prefix}_cert.pem" "${dest_dir}/${prefix}_public.pem" \
+             "${dest_dir}/${prefix}_chain.pem" "${dest_dir}/${prefix}_fullchain.pem" \
+             "${dest_dir}/${prefix}_private.pem" || {
         echo "WARNING: Failed to set permissions on certificate files";
     }
 

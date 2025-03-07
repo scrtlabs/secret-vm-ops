@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -ex
+
 # Startup script
 ATTEST_TOOL=./attest_tool
 COLLATERAL_TOOL=./dcap_collateral_tool
@@ -92,19 +94,29 @@ mount_secret_fs()
     local fs_container_path="$2"
     local size_mbs="$3"
 
-    if [ -f $fs_container_path ]; then
-        echo "Opening existing encrypted file system..."
-        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
-    else
+
+#    if [ -f $fs_container_path ]; then
+#        echo "Opening existing encrypted file system..."
+#        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
+#    else
+#        echo "Creating encrypted file system..."
+#        sudo dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
+#        echo -n $fs_passwd | sudo cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
+#        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
+#        sudo mkfs.ext4 /dev/mapper/encrypted_volume2
+#    fi
+#
+    echo "Opening existing encrypted file system..."
+    echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
+    if [ $? -ne 0 ]; then
         echo "Creating encrypted file system..."
-        dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
-        echo -n $fs_passwd | cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
+        echo -n $fs_passwd | sudo cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
         echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
         sudo mkfs.ext4 /dev/mapper/encrypted_volume2
     fi
 
     echo "Mounting encrypted file system..."
-    sudo mkdir $SECURE_MNT
+    sudo mkdir -p $SECURE_MNT
     sudo mount /dev/mapper/encrypted_volume2 $SECURE_MNT
 
     sudo chown $USER $SECURE_MNT
@@ -194,7 +206,8 @@ else
 
     if get_master_secret; then
 
-	mount_secret_fs $master_secret "./encrypted_fs.img" $SECURE_FS_SIZE_MB
+	#mount_secret_fs $master_secret "./encrypted_fs.img" $SECURE_FS_SIZE_MB
+	mount_secret_fs $master_secret /dev/vdb $SECURE_FS_SIZE_MB
 	echo "$master_secret" > $SECURE_MNT/master_secret.txt
     else
         echo "Couldn't get master secret: $g_Error"

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -ex
+
 # Activate Miniconda environment
 source /home/claive/miniconda3/bin/activate
 
@@ -12,7 +14,7 @@ sudo nvidia-smi conf-compute -srs 1
 CERT_DIR=/mnt/secure/cert
 CERT_NAME=secretai2
 CERT_PATH=$CERT_DIR/"$CERT_NAME"_cert.pem
-DOMAIN_NAME=tee-demo.scrtlabs.com
+DOMAIN_NAME=tee-demo2.scrtlabs.com
 DOMAIN_EMAIL=info@scrtlabs.com
 
 ./startup.sh
