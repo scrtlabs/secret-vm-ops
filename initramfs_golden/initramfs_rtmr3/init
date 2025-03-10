@@ -1,0 +1,57 @@
+#!/bin/sh
+echo "Booting custom initramfs - test..."
+
+mkdir -p /dev
+mkdir -p /proc
+mkdir -p /sys
+mkdir -p /run
+mkdir -p /mnt
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+mount -t devtmpfs devtmpfs /dev
+
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+
+depmod -a
+modprobe 9p
+modprobe 9pnet_virtio
+insmod tdx-guest.ko
+
+mount -t 9p -o trans=virtio guest_config mnt -oversion=9p2000.L
+
+DOCKER_COMPOSE_HASH=$(sha256sum mnt/docker-compose.yaml | cut -f 1 -d ' ')
+#ROOTFS_HASH=$(sha256sum /dev/vda2 | cut -f 1 -d ' ')
+ROOTFS_HASH=$(cat mnt/rootfs_hash)
+
+echo "DOCKER_COMPOSE_HASH=$DOCKER_COMPOSE_HASH"
+echo "ROOTFS_HASH=$ROOTFS_HASH"
+
+#Extend rtmr3
+attest_tool report
+attest_tool extendrt 3 $DOCKER_COMPOSE_HASH
+attest_tool extendrt 3 $ROOTFS_HASH
+attest_tool report
+
+#ip link set lo up
+#ifconfig lo 127.0.0.1
+#ip link set eth0 up
+#ip addr add 10.0.2.15/24 dev eth0
+#ip route add default via 10.0.2.2
+
+mount /dev/vda2 /root
+
+mkdir -p /root/mnt/config
+
+mount --move /sys /root/sys
+mount --move /proc /root/proc
+mount --move /dev /root/dev
+mount --move /run /root/run
+mount --move /mnt /root/mnt/config
+
+exec busybox switch_root /root /sbin/init
+
+#exec /bin/sh
+
