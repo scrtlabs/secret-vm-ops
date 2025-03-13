@@ -4,7 +4,7 @@ set -ex
 
 # Startup script
 ATTEST_TOOL=./attest_tool
-COLLATERAL_TOOL=./dcap_collateral_tool
+#COLLATERAL_TOOL=./dcap_collateral_tool
 CRYPT_TOOL=./crypt_tool
 
 KMS_SERVICE_ID=0
@@ -57,7 +57,9 @@ get_master_secret()
         return 1
     fi
 
-    local collateral=$($COLLATERAL_TOOL $quote |sed -n '3p')
+    #local collateral=$($COLLATERAL_TOOL $quote |sed -n '3p')
+    local collateral=$(curl -s -X POST https://pccs.scrtlabs.com/dcap-tools/quote-parse -H "Content-Type: application/json" -d "{\"quote\": \"$quote\"}" |jq '.collateral')
+    collateral=$(echo $collateral | sed 's/"//g') # remove quotes
     if ! test_valid_hex_data "collateral"; then
         return 1
     fi
