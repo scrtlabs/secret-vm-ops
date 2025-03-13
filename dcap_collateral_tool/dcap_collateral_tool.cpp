@@ -61,20 +61,6 @@ namespace Hex {
                 PrintBlockToFile(pDst, nDst, pf);
         }
 
-        void PrintField(const uint8_t* pDst, uint32_t nDst, FILE* pf, const char* szName)
-        {
-                fputs(szName, pf);
-                fputs(": ", pf);
-                PrintToFile(pDst, nDst, pf);
-                fputc('\n', pf);
-        }
-
-        template <typename T>
-        void PrintField_T(const T& x, const char* szName)
-        {
-                PrintField((const uint8_t*) &x, sizeof(T), stdout, szName);
-        }
-
         uint32_t Scan(uint8_t* pDst, const char* sz, uint32_t nTxtLen)
         {
                 uint32_t ret = 0;
@@ -166,6 +152,94 @@ void SerializeCollateral(std::vector<uint8_t>& ret, const uint8_t* pColl, uint32
         offs += x.qe_identity_issuer_chain_size;
 }
 
+#pragma pack (push, 1)
+
+struct tdx_quote_hdr_t {
+        uint16_t version;
+        uint16_t key_type;
+        uint32_t tee_type;
+        uint32_t reserved;
+        uint8_t qe_vendor_id[16];
+        uint8_t user_data[20];
+};
+
+struct tdx_quote_t {
+        tdx_quote_hdr_t header;
+        uint8_t tcb_svn [16];
+        uint8_t mr_seam [48];
+        uint8_t mr_signer_seam [48];
+        uint8_t seam_attributes [8];
+        uint8_t td_attributes [8];
+        uint8_t xfam [8];
+        uint8_t mr_td [48];
+        uint8_t mr_config_id [48];
+        uint8_t mr_owner [48];
+        uint8_t mr_config [48];
+        uint8_t rtmr0 [48];
+        uint8_t rtmr1 [48];
+        uint8_t rtmr2 [48];
+        uint8_t rtmr3 [48];
+        uint8_t report_data [64];
+};
+    
+#pragma pack (pop)
+
+struct JsonObj
+{
+        bool m_NonEmpty = false;
+
+        JsonObj()
+        {
+                printf("{");
+        }
+
+        ~JsonObj()
+        {
+                printf("}");
+        }
+
+        struct Quotes
+        {
+                Quotes()
+                {
+                        printf("\"");
+                }
+                ~Quotes()
+                {
+                        printf("\"");
+                }
+        };
+
+        void Value(int n, const char* fmt = nullptr)
+        {
+                Quotes q;
+                printf(fmt ? fmt : "%d", n);
+        }
+
+        template <uint32_t n>
+        void Value(const uint8_t (&p)[n], const char*)
+        {
+                Quotes q;
+                Hex::PrintToFile(p, n, stdout);
+        }
+
+        void AddElement(const char* sz)
+        {
+                if (m_NonEmpty)
+                        printf(",");
+                else
+                        m_NonEmpty = true;
+                        
+                printf(" \"%s\": ", sz);
+        }
+
+        template <typename T>
+        void AddField(const char* szField, const T& val, const char* fmt = nullptr)
+        {
+                AddElement(szField);
+                Value(val, fmt);
+        }
+};
 
 int main(int argc, char *argv[])
 {
@@ -185,6 +259,9 @@ int main(int argc, char *argv[])
                 return 1;
  	}
 
+        JsonObj obj0;
+        obj0.AddElement("collateral");
+
 	std::vector<uint8_t> vQuote, vColl;
 	vQuote.resize(nQuote);
 
@@ -195,35 +272,75 @@ int main(int argc, char *argv[])
 	uint8_t* pColl = nullptr;
 
 	auto res = tee_qv_get_collateral(&vQuote.front(), nQuote, &pColl, &nColl);
+        if (pColl)
+        {
+                {
+                        JsonObj::Quotes q1;
 
-	if (!pColl)
-	{
-	        printf("Failed to get collateral: %d\n", res);
-        	return 1;
-	}
+                        SerializeCollateral(vColl, pColl, nColl);
+                        if (!vColl.empty())
+                                Hex::PrintToFile(&vColl.front(), (uint32_t) vColl.size(), stdout);
+                }
 
-	SerializeCollateral(vColl, pColl, nColl);
+                {
+                        obj0.AddElement("status");
+                        JsonObj obj1;
 
-	printf("\nFetched Collateral: \n");
-        if (!vColl.empty())
-	        Hex::PrintToFile(&vColl.front(), (uint32_t) vColl.size(), stdout);
-	printf("\n\n");
+                        uint32_t nExpStatus = 0;
+                        sgx_ql_qv_result_t qvRes = SGX_QL_QV_RESULT_UNSPECIFIED;
+                        auto tNow = time(nullptr);
+                        res = sgx_qv_verify_quote(&vQuote.front(), nQuote, (const sgx_ql_qve_collateral_t*) pColl, tNow, &nExpStatus, &qvRes, nullptr, 0, nullptr);
+                
+                        if (SGX_QL_SUCCESS == res)
+                        {
+                                obj1.AddField("result", qvRes);
+                                obj1.AddField("exp_status", nExpStatus);
+        
+                        }
+                        else
+                                obj1.AddField("error", res);
+                }
 
-	uint32_t nExpStatus = 0;
-	sgx_ql_qv_result_t qvRes = SGX_QL_QV_RESULT_UNSPECIFIED;
-	auto tNow = time(nullptr);
-	res = sgx_qv_verify_quote(&vQuote.front(), nQuote, (const sgx_ql_qve_collateral_t*) pColl, tNow, &nExpStatus, &qvRes, nullptr, 0, nullptr);
+                if (nQuote >= sizeof(tdx_quote_hdr_t))
+                {
+                        const tdx_quote_hdr_t& hdr = *reinterpret_cast<const tdx_quote_hdr_t*>(&vQuote.front());
 
-	tee_qv_free_collateral(pColl);
+                        obj0.AddElement("quote");
+                        JsonObj obj1;
 
-	if (SGX_QL_SUCCESS != res)
-	{
-                printf("Failed to verify quote: %d\n", res);
-                return 1;
- 	}
+                        obj1.AddField("version", hdr.version);
+                        obj1.AddField("tee_type", hdr.tee_type, "%08x");
 
-	printf("Quote verification result: %d\n", qvRes);
-	printf("Collateral expiration status: %d\n", nExpStatus);
+                        if ((4 == hdr.version) && (0x81 == hdr.tee_type) && (nQuote >= sizeof(tdx_quote_t)))
+                        {
+                                const tdx_quote_t& quote = *reinterpret_cast<const tdx_quote_t*>(&vQuote.front());
+                                obj1.AddField("tcb_svn", quote.tcb_svn);
+                                obj1.AddField("mr_seam", quote.mr_seam);
+                                obj1.AddField("mr_signer_seam", quote.mr_signer_seam);
+                                obj1.AddField("td_attributes", quote.td_attributes);
+                                obj1.AddField("xfam", quote.xfam);
+                                obj1.AddField("mr_td", quote.mr_td);
+                                obj1.AddField("mr_config_id", quote.mr_config_id);
+                                obj1.AddField("mr_owner", quote.mr_owner);
+                                obj1.AddField("mr_config", quote.mr_config);
+                                obj1.AddField("rtmr0", quote.rtmr0);
+                                obj1.AddField("rtmr1", quote.rtmr1);
+                                obj1.AddField("rtmr2", quote.rtmr2);
+                                obj1.AddField("rtmr3", quote.rtmr3);
+                                obj1.AddField("report_data", quote.report_data);
+                        }
+                        
+                }
+         
+                tee_qv_free_collateral(pColl);
+        }
+        else
+        {
+                JsonObj obj1;
+                obj1.AddElement("error");
+                obj1.Value(res);
+        }
+
  	
         return 0;
 }
