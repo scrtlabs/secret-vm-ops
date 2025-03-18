@@ -14,7 +14,7 @@ CPU_FLAGS=$(qemu-system-x86_64 -cpu help | awk '/flags/ {y=1; getline}; y {print
 
 # echo "CPU Flags: ${CPU_FLAGS}"
 
-qemu-system-x86_64 -D claive-tdx-cc.log \
+qemu-system-x86_64 -D secret-vm-tdx-cc.log \
 -trace enable=tdx* -D tdx_trace.log \
 -initrd initramfs_rtmr3.img \
 -kernel vmlinuz-6.8.0-55-generic \
@@ -22,7 +22,7 @@ qemu-system-x86_64 -D claive-tdx-cc.log \
 -bios /shared/custom/tdx-linux/edk2/OVMF-c4c99e41-574b-44b2-88f5-8ae904b6aa1b.fd \
 -enable-kvm \
 -name ${PROCESS_NAME},process=${PROCESS_NAME},debug-threads=on \
--drive file="claive-tdx-cc-golden.qcow2",if=virtio \
+-drive file="secret-vm-tdx-cc-golden.qcow2",if=virtio \
 -drive file="encrypted-storage.qcow2",if=virtio \
 -smp cores=16,threads=2,sockets=2 \
 -m ${MEM_SIZE} \
