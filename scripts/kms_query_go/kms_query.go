@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/miscreant/miscreant.go"
@@ -323,7 +324,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	serviceID := 0
+	serviceID, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Printf("Invalid service ID: %s\n", err)
+		os.Exit(1)
+	}
 	quoteBytes, err := hex.DecodeString(os.Args[2])
 	if err != nil {
 		fmt.Printf("Failed to decode quote: %s\n", err)
