@@ -278,8 +278,6 @@ func QueryContract(contractAddress string, query map[string]interface{}) (map[st
 			return nil, fmt.Errorf("failed to decode decrypted data: %w", err)
 		}
 
-		fmt.Printf("Query result: %s\n", string(decodedData))
-
 		var result map[string]interface{}
 		if err := json.Unmarshal(decodedData, &result); err != nil {
 			return nil, fmt.Errorf("failed to parse decrypted data: %w", err)
