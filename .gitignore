@@ -1,2 +1,3 @@
 scripts/.venv/
 .DS_Store
+crypt_tool/target/
