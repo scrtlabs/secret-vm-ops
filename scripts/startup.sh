@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+#set -x
 
 # Startup script
 ATTEST_TOOL=./attest_tool
@@ -99,18 +99,16 @@ mount_secret_fs()
     local fs_container_path="$2"
     local size_mbs="$3"
 
+    # Check the type of the path of the container image
+    if [ -b "$fs_container_path" ]; then
+        echo "FS container is a block device."
+    elif [ -f "$fs_container_path" ]; then
+        echo "FS container is a file."
+    else
+        echo "Creating an FS container file."
+        sudo dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
+    fi
 
-#    if [ -f $fs_container_path ]; then
-#        echo "Opening existing encrypted file system..."
-#        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
-#    else
-#        echo "Creating encrypted file system..."
-#        sudo dd if=/dev/zero of=$fs_container_path bs=1M count=$size_mbs
-#        echo -n $fs_passwd | sudo cryptsetup luksFormat --pbkdf pbkdf2 $fs_container_path
-#        echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
-#        sudo mkfs.ext4 /dev/mapper/encrypted_volume2
-#    fi
-#
     echo "Opening existing encrypted file system..."
     echo -n $fs_passwd | sudo cryptsetup luksOpen $fs_container_path encrypted_volume2
     if [ $? -ne 0 ]; then
