@@ -7,9 +7,10 @@ ATTEST_TOOL=./attest_tool
 #COLLATERAL_TOOL=./dcap_collateral_tool
 CRYPT_TOOL=./crypt_tool
 
-KMS_SERVICE_ID=0
+#KMS_SERVICE_ID=0
 SECURE_MNT=/mnt/secure
-SECURE_FS_SIZE_MB=200480 # 200 GB
+#SECURE_FS_SIZE_MB=200480 # 200 GB
+SECURE_FS_SIZE_MB=50 
 
 PATH_ATTESTATION_TDX=$SECURE_MNT/tdx_attestation.txt
 PATH_ATTESTATION_GPU_1=$SECURE_MNT/gpu_attestation.txt
@@ -207,14 +208,27 @@ else
 
     echo "Performing startup sequence..."
 
-    if get_master_secret; then
+    if [ -z "${KMS_SERVICE_ID}" ]; then
 
-	#mount_secret_fs $master_secret "./encrypted_fs.img" $SECURE_FS_SIZE_MB
-	mount_secret_fs $master_secret /dev/vdb $SECURE_FS_SIZE_MB
-	echo "$master_secret" > $SECURE_MNT/master_secret.txt
+        echo "KMS service ID not set, using non-persistent encrypted fs"
+
+        nonce=$($CRYPT_TOOL rand)
+        if ! test_valid_hex_data "nonce"; then
+            return 1
+        fi
+
+        mount_secret_fs $nonce "./encrypted.img" $SECURE_FS_SIZE_MB
+
     else
-        echo "Couldn't get master secret: $g_Error"
-        mount_secret_fs "12345" "./encrypted_dummy.img" 2
+
+        if get_master_secret; then
+            mount_secret_fs $master_secret /dev/vdb $SECURE_FS_SIZE_MB
+            echo "$master_secret" > $SECURE_MNT/master_secret.txt
+        else
+            echo "Couldn't get master secret: $g_Error"
+            mount_secret_fs "12345" "./encrypted_dummy.img" 2
+        fi
+
     fi
 
     safe_remove_outdated
