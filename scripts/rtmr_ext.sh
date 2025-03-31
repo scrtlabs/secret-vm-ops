@@ -15,7 +15,7 @@ test_valid_hex384()
 }
 
 if [ ! -n "$1" ]; then
-	echo "Usage rtmr_ext [rtmr_prev] new_mesaurement"
+	echo "Usage [rtmr_prev] rtmr_ext new_mesaurement"
 	exit 1
 fi
 
