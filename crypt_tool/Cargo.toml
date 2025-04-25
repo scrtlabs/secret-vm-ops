@@ -1,5 +1,5 @@
 [package]
-name = "crypt_tool"
+name = "crypt-tool"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

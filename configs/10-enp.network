@@ -1,0 +1,12 @@
+[Match]
+Name=enp*
+
+[Network]
+LinkLocalAddressing=ipv6
+Address=IP_ADDR_PLACEHOLDER
+DNS=1.1.1.1
+DNS=8.8.8.8
+
+[Route]
+Destination=0.0.0.0/0
+Gateway=GATEWAY_PLACEHOLDER
