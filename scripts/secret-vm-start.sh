@@ -86,7 +86,7 @@ setup_docker() {
     mkdir -p /etc/docker
     echo '{}' > /etc/docker/daemon.json
     test -n "$GPU_MODE" && nvidia-ctk runtime configure --runtime=docker
-    jq ". + {data-root: \"$SECRET_FS_MOUNT_POINT\"}" /etc/docker/daemon.json > tmp.json
+    jq ". + {\"data-root\": \"$SECRET_FS_MOUNT_POINT\"}" /etc/docker/daemon.json > tmp.json
     mv tmp.json /etc/docker/daemon.json
 
     # create docker working directory
