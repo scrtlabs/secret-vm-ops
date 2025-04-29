@@ -96,7 +96,10 @@ setup_docker() {
     pushd .
     cd $SECRET_FS_MOUNT_POINT/docker_wd
     # these files are optional
-    #local kms_res=$(kms-query get_env_by_image $QUOTE $COLLATERAL)
+    if ! (kms-query get_env_by_image $QUOTE $COLLATERAL | jq -re '.secrets_plaintext' > .env); then
+        echo "No env variables were provided"
+        rm .env
+    fi
     cp $CONFIG_DIR/docker-files.tar . && tar xvf ./docker-files.tar || true
     popd
 
