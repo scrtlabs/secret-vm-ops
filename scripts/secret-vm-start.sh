@@ -149,21 +149,19 @@ get_master_secret() {
 
     local kms_res=$(kms-query get_secret_key $KMS_SERVICE_ID $QUOTE $COLLATERAL)
 
-    # the result must consist of 2 lines, which are encrypted master secret and the export pubkey respectively. Parse it.
-    kms_res=$(echo "$kms_res" | xargs) # strip possible leading and trailing spaces
-
-    read encrypted_secret export_pubkey <<< "$kms_res"
+    local encrypted_secret=$(echo $kms_res | jq -r '.encrypted_secret_key')
     if ! test_valid_hex_data "encrypted_secret"; then
         return 1
     fi
 
+    local export_pubkey=$(echo $kms_res | jq -r '.encryption_pub_key')
     if ! test_valid_hex_data "export_pubkey"; then
         return 1
     fi
 
     # finally decrypt the result
     MASTER_SECRET=$(crypt-tool decrypt -s $SEED -d $encrypted_secret -p $export_pubkey)
-    if ! test_valid_hex_data "master_secret"; then
+    if ! test_valid_hex_data "MASTER_SECRET"; then
         return 1
     fi
 
