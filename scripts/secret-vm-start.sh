@@ -67,8 +67,7 @@ setup_env() {
         return 1
     fi
 
-    COLLATERAL=$(curl -s -X POST https://pccs.scrtlabs.com/dcap-tools/quote-parse -H "Content-Type: application/json" -d "{\"quote\": \"$QUOTE\"}" |jq '.collateral')
-    COLLATERAL=$(echo $COLLATERAL | sed 's/"//g') # remove quotes
+    COLLATERAL=$(curl -s -X POST https://pccs.scrtlabs.com/dcap-tools/quote-parse -H "Content-Type: application/json" -d "{\"quote\": \"$QUOTE\"}" | jq -r '.collateral')
     if ! test_valid_hex_data "COLLATERAL"; then
         return 1
     fi
