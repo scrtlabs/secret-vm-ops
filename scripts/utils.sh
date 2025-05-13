@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -e
 
 # helper function, tests if a variable is a valid hex-encoded data
 test_valid_hex_data()

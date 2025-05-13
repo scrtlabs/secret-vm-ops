@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -x
-
 # ================================
 #         GLOBAL VARIABLES
 # ================================
@@ -47,6 +45,7 @@ source utils.sh
 # ================================
 
 setup_env() {
+    echo "Setting up env..."
     # get random 32 bytes
     SEED=$(crypt-tool rand)
     if ! test_valid_hex_data "SEED"; then
@@ -71,14 +70,18 @@ setup_env() {
     if ! test_valid_hex_data "COLLATERAL"; then
         return 1
     fi
+    echo "Setting up env: Done."
 }
 
 setup_gpu() {
+    echo "Setting up GPU..."
     nvidia-smi conf-compute -srs 1
     nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
+    echo "Setting up GPU: Done"
 }
 
 setup_docker() {
+    echo "Setting up Docker..."
     systemctl stop docker
 
     # setup docker config
@@ -103,9 +106,11 @@ setup_docker() {
     popd
 
     systemctl start docker
+    echo "Setting up Docker: Done."
 }
 
 setup_secret_fs() {
+    echo "Setting up encrypted filesystem..."
     if [ "$SECRET_FS_PERSISTENT" == false ]; then
         local password=$(crypt-tool rand)
         if ! test_valid_hex_data "password"; then
@@ -124,6 +129,7 @@ setup_secret_fs() {
     mount_secret_fs $password $SECRET_FS_DEVICE
     safe_remove_outdated
     attest-tool report > $SECRET_FS_MOUNT_POINT/self_report.txt
+    echo "Setting up encrypted filesystem: Done."
 }
 
 safe_remove_outdated() {
@@ -135,7 +141,7 @@ safe_remove_outdated() {
 # Get the master secret from kms contract, based on our attestation
 get_master_secret() {
     # Query kms contract
-    echo "Querying KMS..."
+    echo "Getting master key..."
 
     local kms_res=$(kms-query get_secret_key $KMS_SERVICE_ID $QUOTE $COLLATERAL)
 
@@ -155,6 +161,7 @@ get_master_secret() {
         return 1
     fi
 
+    echo "Getting master key: Done."
     return 0
 }
 
@@ -176,6 +183,7 @@ mount_secret_fs() {
 }
 
 finalize() {
+    echo "Finalizing..."
     local ssl_cert_path="$1"
 
     echo "Fetching fingerptint from SSL certificate..."
@@ -220,6 +228,7 @@ finalize() {
     echo $quote > $PATH_ATTESTATION_TDX
     echo "TDX attestation done"
 
+    echo "Switching REST server to HTTPS..."
     # make secret-vm-attest-rest run https
     mkdir -p /run/systemd/system/secret-vm-attest-rest.service.d/
     cat <<EOF > /run/systemd/system/secret-vm-attest-rest.service.d/env.conf
@@ -228,6 +237,8 @@ Environment="SECRETVM_SECURE=true"
 EOF
     systemctl daemon-reload
     systemctl restart secret-vm-attest-rest
+    echo "Switching REST server to HTTPS: Done."
+    echo "Finalizing: Done."
 
     return 0
 }
