@@ -105,15 +105,6 @@ setup_docker() {
     systemctl start docker
 }
 
-setup_network() {
-    systemctl stop systemd-networkd
-    local ip_addr=$(jq -r '.ip_addr' $CONFIG_FILE)
-    local gateway=$(jq -r '.gateway' $CONFIG_FILE)
-    sed -i "s%IP_ADDR_PLACEHOLDER%$ip_addr%" /usr/lib/systemd/network/10-enp.network
-    sed -i "s%GATEWAY_PLACEHOLDER%$gateway%" /usr/lib/systemd/network/10-enp.network
-    systemctl start systemd-networkd
-}
-
 setup_secret_fs() {
     if [ "$SECRET_FS_PERSISTENT" == false ]; then
         local password=$(crypt-tool rand)
@@ -229,6 +220,15 @@ finalize() {
     echo $quote > $PATH_ATTESTATION_TDX
     echo "TDX attestation done"
 
+    # make secret-vm-attest-rest run https
+    mkdir -p /run/systemd/system/secret-vm-attest-rest.service.d/
+    cat <<EOF > /run/systemd/system/secret-vm-attest-rest.service.d/env.conf
+[Service]
+Environment="SECRETVM_SECURE=true"
+EOF
+    systemctl daemon-reload
+    systemctl restart secret-vm-attest-rest
+
     return 0
 }
 
@@ -237,7 +237,6 @@ finalize() {
 # ================================
 
 # the order is crucial
-setup_network
 test -n "$GPU_MODE" && setup_gpu
 setup_env
 setup_secret_fs
