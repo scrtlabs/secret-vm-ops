@@ -82,7 +82,7 @@ setup_gpu() {
 
 setup_docker() {
     echo "Setting up Docker..."
-    systemctl stop docker
+    systemctl stop docker.socket
 
     # setup docker config
     mkdir -p /etc/docker
@@ -105,7 +105,7 @@ setup_docker() {
     cp $CONFIG_DIR/docker-files.tar . && tar xvf ./docker-files.tar || true
     popd
 
-    systemctl start docker
+    systemctl start docker.socket
     echo "Setting up Docker: Done."
 }
 
