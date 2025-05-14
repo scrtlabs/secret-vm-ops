@@ -116,9 +116,11 @@ setup_docker() {
     # Attempt to decrypt and write to .env
     if test_valid_hex_data "ENCRYPTED" && test_valid_hex_data "PUBKEY"; then
         hex_payload=$(crypt-tool decrypt -s "$SEED" -d "$ENCRYPTED" -p "$PUBKEY")
+        echo "Hex payload: $hex_payload"
         if test_valid_hex_data "hex_payload"; then
             # Convert hex string to binary data
             escaped=$(echo "$hex_payload" | sed 's/../\\x&/g')
+            echo "Escaped: $escaped"
             printf '%b' "$escaped" > .env
         else
             echo "Failed to decrypt environment variables"
