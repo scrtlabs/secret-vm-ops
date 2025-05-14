@@ -106,21 +106,16 @@ setup_docker() {
     cd $SECRET_FS_MOUNT_POINT/docker_wd
 
     # Query KMS for encrypted environment variables
-    echo "Quote: $QUOTE"
-    echo "Collateral: $COLLATERAL"
     KMS_ENV_JSON=$(kms-query get_env_by_image "$QUOTE" "$COLLATERAL")
-    echo "$KMS_ENV_JSON"
     ENCRYPTED=$(echo "$KMS_ENV_JSON" | jq -r '.encrypted_secrets_plaintext // empty')
     PUBKEY=$(echo "$KMS_ENV_JSON"  | jq -r '.encryption_pub_key       // empty')
 
     # Attempt to decrypt and write to .env
     if test_valid_hex_data "ENCRYPTED" && test_valid_hex_data "PUBKEY"; then
         hex_payload=$(crypt-tool decrypt -s "$SEED" -d "$ENCRYPTED" -p "$PUBKEY")
-        echo "Hex payload: $hex_payload"
         if test_valid_hex_data "hex_payload"; then
             # Convert hex string to binary data
             escaped=$(echo "$hex_payload" | sed 's/../\\x&/g')
-            echo "Escaped: $escaped"
             printf '%b' "$escaped" > .env
         else
             echo "Failed to decrypt environment variables"
