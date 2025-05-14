@@ -106,7 +106,10 @@ setup_docker() {
     cd $SECRET_FS_MOUNT_POINT/docker_wd
 
     # Query KMS for encrypted environment variables
+    echo "Quote: $QUOTE"
+    echo "Collateral: $COLLATERAL"
     KMS_ENV_JSON=$(kms-query get_env_by_image "$QUOTE" "$COLLATERAL")
+    echo "$KMS_ENV_JSON"
     ENCRYPTED=$(echo "$KMS_ENV_JSON" | jq -r '.encrypted_secrets_plaintext // empty')
     PUBKEY=$(echo "$KMS_ENV_JSON"  | jq -r '.encryption_pub_key       // empty')
 
