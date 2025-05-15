@@ -59,13 +59,13 @@ setup_env() {
     echo "Getting initial attestation..."
 
     # Derive the initial public key from the seed
-    pubkey=$(crypt-tool generate-key -s $SEED)
+    local pubkey=$(crypt-tool generate-key -s $SEED)
     if ! test_valid_hex_data "pubkey"; then
         return 1
     fi
 
     # Combine pubkey and VM_UID into report data
-    report_data="${pubkey}${VM_UID}"
+    local report_data="${pubkey}${VM_UID}"
 
     # Obtain TDX attestation using the combined report_data
     QUOTE=$(attest-tool attest "$report_data")
@@ -106,16 +106,16 @@ setup_docker() {
     cd $SECRET_FS_MOUNT_POINT/docker_wd
 
     # Query KMS for encrypted environment variables
-    KMS_ENV_JSON=$(kms-query get_env_by_image "$QUOTE" "$COLLATERAL")
-    ENCRYPTED=$(echo "$KMS_ENV_JSON" | jq -r '.encrypted_secrets_plaintext // empty')
-    PUBKEY=$(echo "$KMS_ENV_JSON"  | jq -r '.encryption_pub_key       // empty')
+    local kms_env_json=$(kms-query get_env_by_image "$QUOTE" "$COLLATERAL")
+    local encrypted=$(echo "$kms_env_json" | jq -r '.encrypted_secrets_plaintext // empty')
+    local pubkey=$(echo "$kms_env_json"  | jq -r '.encryption_pub_key       // empty')
 
     # Attempt to decrypt and write to .env
-    if test_valid_hex_data "ENCRYPTED" && test_valid_hex_data "PUBKEY"; then
-        hex_payload=$(crypt-tool decrypt -s "$SEED" -d "$ENCRYPTED" -p "$PUBKEY")
+    if test_valid_hex_data "encrypted" && test_valid_hex_data "pubkey"; then
+        local hex_payload=$(crypt-tool decrypt -s "$SEED" -d "$encrypted" -p "$pubkey")
         if test_valid_hex_data "hex_payload"; then
             # Convert hex string to binary data
-            escaped=$(echo "$hex_payload" | sed 's/../\\x&/g')
+            local escaped=$(echo "$hex_payload" | sed 's/../\\x&/g')
             printf '%b' "$escaped" > .env
         else
             echo "Failed to decrypt environment variables"
