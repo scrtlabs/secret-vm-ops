@@ -21,6 +21,9 @@ CERT_PATH=$CERT_DIR/"$CERT_NAME"_cert.pem
 DOMAIN_NAME=$(jq -r '.domain_name' $CONFIG_FILE)
 DOMAIN_EMAIL=info@scrtlabs.com
 
+# Read the VM unique identifier from configuration
+VM_UID=$(jq -r '.vm_uid' $CONFIG_FILE)
+
 PATH_ATTESTATION_TDX=$SECRET_FS_MOUNT_POINT/tdx_attestation.txt
 PATH_ATTESTATION_GPU_1=$SECRET_FS_MOUNT_POINT/gpu_attestation.txt
 PATH_ATTESTATION_GPU_2=$SECRET_FS_MOUNT_POINT/gpu_attestation_token.txt
@@ -52,16 +55,20 @@ setup_env() {
         return 1
     fi
 
-    # use it to derive initial pubkey
+    # get attestation with this pubkey as report data
+    echo "Getting initial attestation..."
+
+    # Derive the initial public key from the seed
     local pubkey=$(crypt-tool generate-key -s $SEED)
     if ! test_valid_hex_data "pubkey"; then
         return 1
     fi
 
-    # get attestation with this pubkey as report data
-    echo "Getting initial attestation..."
+    # Combine pubkey and VM_UID into report data
+    local report_data="${pubkey}${VM_UID}"
 
-    QUOTE=$(attest-tool attest $pubkey)
+    # Obtain TDX attestation using the combined report_data
+    QUOTE=$(attest-tool attest "$report_data")
     if ! test_valid_hex_data "QUOTE"; then
         return 1
     fi
@@ -97,10 +104,26 @@ setup_docker() {
     
     pushd .
     cd $SECRET_FS_MOUNT_POINT/docker_wd
-    # these files are optional
-    if ! (kms-query get_env_by_image $QUOTE $COLLATERAL | jq -re '.secrets_plaintext' > .env); then
-        echo "No env variables were provided"
-        rm .env
+
+    # Query KMS for encrypted environment variables
+    local kms_env_json=$(kms-query get_env_by_image "$QUOTE" "$COLLATERAL")
+    local encrypted=$(echo "$kms_env_json" | jq -r '.encrypted_secrets_plaintext // empty')
+    local pubkey=$(echo "$kms_env_json"  | jq -r '.encryption_pub_key       // empty')
+
+    # Attempt to decrypt and write to .env
+    if test_valid_hex_data "encrypted" && test_valid_hex_data "pubkey"; then
+        local hex_payload=$(crypt-tool decrypt -s "$SEED" -d "$encrypted" -p "$pubkey")
+        if test_valid_hex_data "hex_payload"; then
+            # Convert hex string to binary data
+            local escaped=$(echo "$hex_payload" | sed 's/../\\x&/g')
+            printf '%b' "$escaped" > .env
+        else
+            echo "Failed to decrypt environment variables"
+        fi
+    else
+        echo "No environment variables provided"
+        rm -f .env
+
     fi
     cp $CONFIG_DIR/docker-files.tar . && tar xvf ./docker-files.tar || true
     popd
