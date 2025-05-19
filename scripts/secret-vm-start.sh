@@ -163,23 +163,39 @@ safe_remove_outdated() {
 
 # Get the master secret from kms contract, based on our attestation
 get_master_secret() {
-    # Query kms contract
     echo "Getting master key..."
 
-    local kms_res=$(kms-query get_secret_key $KMS_SERVICE_ID $QUOTE $COLLATERAL)
+    # Extract optional service ID from configuration
+    local configured_service_id
+    configured_service_id=$(jq -r '.service_id // empty' "$CONFIG_FILE")
 
-    local encrypted_secret=$(echo $kms_res | jq -r '.encrypted_secret_key')
+    local kms_res
+    if [ -n "$configured_service_id" ] && [ "$configured_service_id" != "null" ]; then
+        # If service_id is defined, fetch secret for that service
+        echo "Using service_id=$configured_service_id to fetch master secret"
+        kms_res=$(kms-query get_secret_key "$configured_service_id" "$QUOTE" "$COLLATERAL")
+    else
+        # Otherwise, use image-based attestation to retrieve secret
+        echo "No service_id in config; fetching master secret by image attestation"
+        kms_res=$(kms-query get_secret_key_by_image "$QUOTE" "$COLLATERAL")
+    fi
+
+    # Extract the encrypted secret from the KMS response
+    local encrypted_secret
+    encrypted_secret=$(echo "$kms_res" | jq -r '.encrypted_secret_key // empty')
     if ! test_valid_hex_data "encrypted_secret"; then
         return 1
     fi
 
-    local export_pubkey=$(echo $kms_res | jq -r '.encryption_pub_key')
-    if ! test_valid_hex_data "export_pubkey"; then
+    # Extract the encryption public key from the response
+    local encryption_pubkey
+    encryption_pubkey=$(echo "$kms_res" | jq -r '.encryption_pub_key // empty')
+    if ! test_valid_hex_data "encryption_pubkey"; then
         return 1
     fi
 
-    # finally decrypt the result
-    MASTER_SECRET=$(crypt-tool decrypt -s $SEED -d $encrypted_secret -p $export_pubkey)
+    # Decrypt the master secret using our seed and the returned pubkey
+    MASTER_SECRET=$(crypt-tool decrypt -s "$SEED" -d "$encrypted_secret" -p "$encryption_pubkey")
     if ! test_valid_hex_data "MASTER_SECRET"; then
         return 1
     fi
@@ -187,6 +203,7 @@ get_master_secret() {
     echo "Getting master key: Done."
     return 0
 }
+
 
 mount_secret_fs() {
     local fs_passwd="$1"
