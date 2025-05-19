@@ -314,13 +314,14 @@ func main() {
 	// detect command index
 	i := 1
 	for ; i < len(os.Args); i++ {
-		if os.Args[i] == "get_secret_key" || os.Args[i] == "get_env_by_image" {
+		if os.Args[i] == "get_secret_key" || os.Args[i] == "get_env_by_image" || os.Args[i] == "get_secret_key_by_image" {
 			break
 		}
 	}
 	if i == len(os.Args) {
 		fmt.Println("Usage: go run kms_query.go [<extra_endpoint>...] get_secret_key service_id quoteHex collateralHex")
 		fmt.Println("       go run kms_query.go [<extra_endpoint>...] get_env_by_image quoteHex collateralHex")
+		fmt.Println("       go run kms_query.go [<extra_endpoint>...] get_secret_key_by_image quoteHex collateralHex")
 		os.Exit(1)
 	}
 	// any CLI-provided endpoints go at the front
@@ -338,21 +339,32 @@ func main() {
 	switch cmd {
 	case "get_secret_key":
 		if len(args) != 3 {
-			fmt.Println("Usage get_secret_key service_id quoteHex collateralHex")
+			fmt.Println("Usage: get_secret_key service_id quoteHex collateralHex")
 			os.Exit(1)
 		}
 		id, _ := strconv.Atoi(args[0])
 		q, _ := hex.DecodeString(args[1])
 		c, _ := hex.DecodeString(args[2])
 		query = map[string]interface{}{"get_secret_key": map[string]interface{}{"service_id": id, "quote": toInterfaceSlice(q), "collateral": toInterfaceSlice(c)}}
+
 	case "get_env_by_image":
 		if len(args) != 2 {
-			fmt.Println("Usage get_env_by_image quoteHex collateralHex")
+			fmt.Println("Usage: get_env_by_image quoteHex collateralHex")
 			os.Exit(1)
 		}
 		q, _ := hex.DecodeString(args[0])
 		c, _ := hex.DecodeString(args[1])
 		query = map[string]interface{}{"get_env_by_image": map[string]interface{}{"quote": toInterfaceSlice(q), "collateral": toInterfaceSlice(c)}}
+
+	case "get_secret_key_by_image":
+		if len(args) != 2 {
+			fmt.Println("Usage: get_secret_key_by_image quoteHex collateralHex")
+			os.Exit(1)
+		}
+		q, _ := hex.DecodeString(args[0])
+		c, _ := hex.DecodeString(args[1])
+		query = map[string]interface{}{"get_secret_key_by_image": map[string]interface{}{"quote": toInterfaceSlice(q), "collateral": toInterfaceSlice(c)}}
+
 	default:
 		fmt.Println("Unknown command", cmd)
 		os.Exit(1)
