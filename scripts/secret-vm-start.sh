@@ -165,13 +165,13 @@ safe_remove_outdated() {
 get_master_secret() {
     echo "Getting master key..."
 
-    # Extract optional service ID from configuration
+    # Read optional service ID from configuration
     local configured_service_id
     configured_service_id=$(jq -r '.service_id // empty' "$CONFIG_FILE")
 
     local kms_res
     if [ -n "$configured_service_id" ] && [ "$configured_service_id" != "null" ]; then
-        # If service_id is defined, fetch secret for that service
+        # If service_id is defined, fetch the secret for that service
         echo "Using service_id=$configured_service_id to fetch master secret"
         kms_res=$(kms-query get_secret_key "$configured_service_id" "$QUOTE" "$COLLATERAL")
     else
@@ -180,23 +180,42 @@ get_master_secret() {
         kms_res=$(kms-query get_secret_key_by_image "$QUOTE" "$COLLATERAL")
     fi
 
-    # Extract the encrypted secret from the KMS response
+    # Attempt to extract error message from the KMS response
+    local error_message
+    error_message=$(echo "$kms_res" | jq -r '.message // empty')
+    
+    # Extract the encrypted secret
     local encrypted_secret
     encrypted_secret=$(echo "$kms_res" | jq -r '.encrypted_secret_key // empty')
     if ! test_valid_hex_data "encrypted_secret"; then
+        # If we have a KMS-provided error message, show it
+        if [ -n "$error_message" ]; then
+            echo "KMS error: $error_message"
+        else
+            echo "Failed to retrieve encrypted_secret from KMS response"
+        fi
         return 1
     fi
 
-    # Extract the encryption public key from the response
+    # Extract the encryption public key
     local encryption_pubkey
     encryption_pubkey=$(echo "$kms_res" | jq -r '.encryption_pub_key // empty')
     if ! test_valid_hex_data "encryption_pubkey"; then
+        if [ -n "$error_message" ]; then
+            echo "KMS error: $error_message"
+        else
+            echo "Failed to retrieve encryption_pubkey from KMS response"
+        fi
         return 1
     fi
 
-    # Decrypt the master secret using our seed and the returned pubkey
-    MASTER_SECRET=$(crypt-tool decrypt -s "$SEED" -d "$encrypted_secret" -p "$encryption_pubkey")
+    # Decrypt the master secret using our seed and the returned public key
+    MASTER_SECRET=$(crypt-tool decrypt \
+        -s "$SEED" \
+        -d "$encrypted_secret" \
+        -p "$encryption_pubkey")
     if ! test_valid_hex_data "MASTER_SECRET"; then
+        echo "Decryption of master secret failed"
         return 1
     fi
 
